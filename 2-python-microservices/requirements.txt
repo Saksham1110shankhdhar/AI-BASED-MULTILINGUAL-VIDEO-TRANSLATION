@@ -1,3 +1,8 @@
 flask
+flask-cors
 openai-whisper
 torch
+transformers
+gTTS
+pydub
+audioop-lts

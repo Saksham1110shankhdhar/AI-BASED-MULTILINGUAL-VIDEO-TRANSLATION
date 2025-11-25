@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import axios from "axios";
 
 function App() {
@@ -7,12 +7,59 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [translateMessage, setTranslateMessage] = useState("");
   const [language, setLanguage] = useState("auto");
-  const [targetLang, setTargetLang] = useState("hi"); // New state for target language
+  const [targetLang, setTargetLang] = useState("hi");
   const [detectedLanguage, setDetectedLanguage] = useState(null);
   const [modelSize, setModelSize] = useState("base");
+  const [ttsLang, setTtsLang] = useState("hi");
+  const [voiceProfile, setVoiceProfile] = useState("female");
+  const [audioUrl, setAudioUrl] = useState(null);
+  const [statusMessage, setStatusMessage] = useState("Waiting for a media file");
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const hasTranscription = Boolean(text);
+  const hasTranslation = Boolean(translateMessage);
+
+  const stepperItems = useMemo(
+    () => [
+      {
+        label: "Upload",
+        description: file ? file.name : "Drop audio/video or click to browse",
+        done: Boolean(file),
+      },
+      {
+        label: "Transcribe",
+        description: hasTranscription
+          ? `Detected ${detectedLanguage || language}`
+          : "Convert speech to text",
+        done: hasTranscription,
+      },
+      {
+        label: "Translate",
+        description: hasTranslation ? `Translated to ${targetLang}` : "Optional",
+        done: hasTranslation,
+      },
+      {
+        label: "Voice style",
+        description: `Tone: ${voiceProfile}`,
+        done: Boolean(voiceProfile),
+      },
+      {
+        label: "Voiceover",
+        description: audioUrl ? "Preview ready" : "Generate AI voice",
+        done: Boolean(audioUrl),
+      },
+    ],
+    [file, hasTranscription, detectedLanguage, language, hasTranslation, targetLang, voiceProfile, audioUrl]
+  );
 
   const handleFileChange = (e) => {
-    setFile(e.target.files[0]);
+    const selectedFile = e.target.files?.[0];
+    setFile(selectedFile);
+    setText("");
+    setTranslateMessage("");
+    setAudioUrl(null);
+    setVoiceProfile("female");
+    setStatusMessage(selectedFile ? "Ready to transcribe" : "Waiting for a media file");
   };
 
   const handleUpload = async () => {
@@ -27,29 +74,25 @@ function App() {
     formData.append("model", modelSize);
 
     setLoading(true);
+    setErrorMessage("");
+    setStatusMessage("Uploading and transcribing…");
     try {
       const res = await axios.post("http://localhost:8000/transcribe", formData, {
         headers: { "Content-Type": "multipart/form-data" },
-        timeout: 300000, // 5 minutes timeout for large files
+        timeout: 900000,
       });
       setText(res.data.transcription || "No transcription found");
       setDetectedLanguage(res.data.detected_language || language);
+      setStatusMessage("Transcription completed");
     } catch (error) {
       console.error(error);
-      let errorMessage = "Error during transcription!";
-      
-      if (error.code === "ECONNREFUSED") {
-        errorMessage = "Could not connect to the backend server. Please make sure the Python microservice is running on port 8000.";
-      } else if (error.code === "ERR_NETWORK") {
-        errorMessage = "Network error. Please check your internet connection.";
-      } else if (error.code === "ECONNABORTED") {
-        errorMessage = "Request timed out. The file might be too large or processing took too long.";
-      } else if (error.response) {
-        errorMessage = `Error: ${error.response.data.error || error.response.data.message || "Unknown error"}`;
-      }
-      
-      alert(errorMessage);
+      setErrorMessage(
+        error?.response?.data?.error ||
+          error?.message ||
+          "Transcription failed. Check backend logs."
+      );
       setText("");
+      setStatusMessage("Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -57,244 +100,468 @@ function App() {
 
   const handleTranslate = async () => {
     if (!text) return;
-    setTranslateMessage('');
+    setTranslateMessage("");
+    setErrorMessage("");
+    setStatusMessage("Translating text…");
+
     try {
-      // Normalize language code (convert to lowercase, handle "EN" -> "en")
-      const sourceLang = detectedLanguage ? detectedLanguage.toLowerCase() : 'en';
-      
-      const res = await axios.post("http://localhost:3000/api/translate", {
+      const sourceLang = detectedLanguage ? detectedLanguage.toLowerCase() : "en";
+
+      const res = await axios.post("http://localhost:8000/translate", {
         text,
-        target_lang: targetLang,
         source_lang: sourceLang,
+        target_lang: targetLang,
       });
-  
+
       if (res.data.translated_text) {
         setTranslateMessage(res.data.translated_text);
-      } else if (res.data.error) {
-        setTranslateMessage("Error: " + (res.data.details || res.data.error));
+        setStatusMessage("Translation ready");
       } else {
-        setTranslateMessage("Unknown response");
+        setTranslateMessage("Translation failed!");
+        setStatusMessage("Translation failed");
       }
     } catch (err) {
-      setTranslateMessage("Error: " + (err?.response?.data?.error || err.message));
+      setTranslateMessage("Error: " + err.message);
+      setErrorMessage(err.message);
+      setStatusMessage("Translation failed");
     }
   };
-  
+
+  const handleTTS = async () => {
+    if (!translateMessage) return;
+
+    setStatusMessage("Generating synthetic voice…");
+    setErrorMessage("");
+
+    try {
+      const res = await axios.post("http://localhost:8000/tts", {
+        text: translateMessage,
+        lang: ttsLang,
+        voice: voiceProfile,
+      });
+
+      if (res.data.audio_url) {
+        setAudioUrl("http://localhost:8000" + res.data.audio_url);
+        setStatusMessage("Voiceover created");
+      } else {
+        setStatusMessage("TTS failed");
+      }
+    } catch (err) {
+      setStatusMessage("TTS failed");
+      setErrorMessage(err.message);
+      alert("TTS failed! Check backend logs.");
+    }
+  };
+
+  const resetPipeline = () => {
+    setFile(null);
+    setText("");
+    setTranslateMessage("");
+    setAudioUrl(null);
+    setDetectedLanguage(null);
+    setVoiceProfile("female");
+    setStatusMessage("Waiting for a media file");
+    setErrorMessage("");
+  };
+
+  const renderStepIndicator = () => (
+    <div className="space-y-4">
+      {stepperItems.map((step, index) => (
+        <div key={step.label} className="flex items-center gap-4">
+          <div
+            className={`flex h-10 w-10 items-center justify-center rounded-full border-2 ${
+              step.done
+                ? "border-emerald-400 bg-emerald-400/20 text-emerald-300"
+                : "border-white/30 text-gray-300"
+            }`}
+          >
+            {step.done ? "✓" : index + 1}
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-200 uppercase tracking-wide">
+              {step.label}
+            </p>
+            <p className="text-sm text-gray-400">{step.description}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const glassCard =
+    "rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-2xl shadow-[0_20px_60px_rgba(15,23,42,0.45)]";
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
-      <div className="max-w-4xl w-full">
-        {/* Header Section */}
-        <div className="text-center mb-12">
-          <h1 className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 mb-4">
-            🎤 MultiVidAI
-          </h1>
-          <p className="text-xl text-gray-300">
-            Transcribe Video/Audio in 22 Indian Languages
-          </p>
-        </div>
+    <div className="relative min-h-screen bg-[#030616] text-white">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -left-32 top-10 h-80 w-80 rounded-full bg-purple-600/30 blur-[120px]" />
+        <div className="absolute right-0 top-44 h-64 w-64 rounded-full bg-blue-500/20 blur-[140px]" />
+      </div>
 
-        {/* Main Card */}
-        <div className="bg-white/10 backdrop-blur-lg rounded-3xl shadow-2xl p-8 border border-white/20">
-          {/* File Upload Section */}
-          <div className="mb-8">
-            <label htmlFor="file-upload" className="block">
-              <div className="relative">
-                <div className="flex flex-col items-center justify-center w-full h-64 border-2 border-dashed border-gray-400 rounded-2xl bg-gradient-to-br from-blue-500/10 to-purple-500/10 hover:border-blue-400 transition-all duration-300 cursor-pointer group">
-                  <svg className="w-16 h-16 text-gray-400 group-hover:text-blue-400 transition-colors duration-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                  <p className="text-xl text-gray-300 font-semibold mb-2">
-                    {file ? file.name : "Drop your audio or video file here"}
-                  </p>
-                  <p className="text-sm text-gray-400">
-                    or <span className="text-blue-400 font-medium">browse files</span>
-                  </p>
-                </div>
-                <input
-                  id="file-upload"
-                  type="file"
-                  onChange={handleFileChange}
-                  accept="audio/*,video/*"
-                  className="hidden"
-                />
-              </div>
-            </label>
+      <div className="relative mx-auto flex max-w-6xl flex-col gap-10 px-4 py-10">
+        <header className="space-y-6">
+          <div className="flex flex-col items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-[0.65rem] uppercase tracking-[0.35em] text-blue-200/90 ring-1 ring-white/5 lg:flex-row">
+            <span className="flex items-center gap-2">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-300" />
+              Whisper powered pipeline
+            </span>
+            <span className="text-[0.6rem] tracking-[0.45em] text-white/60">
+              Transcribe · Translate · Voiceover
+            </span>
           </div>
-
-          {/* Language Selector */}
-          <div className="mb-6">
-            <label htmlFor="language-select" className="block text-sm font-medium text-gray-300 mb-3">
-              Select Indian Language:
-            </label>
-            <div className="relative">
-              <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
-              </svg>
-              <select
-                id="language-select"
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-                disabled={loading}
-                className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/20 rounded-xl text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
-              >
-                <option value="auto" style={{ background: '#1e293b', color: '#e2e8f0' }}>🌍 Auto-detect (Recommended)</option>
-                <option value="hi" style={{ background: '#1e293b', color: '#e2e8f0' }}>🇮🇳 Hindi (हिंदी)</option>
-                <option value="bn" style={{ background: '#1e293b', color: '#e2e8f0' }}>🇮🇳 Bengali (বাংলা)</option>
-                <option value="te" style={{ background: '#1e293b', color: '#e2e8f0' }}>🇮🇳 Telugu (తెలుగు)</option>
-                <option value="mr" style={{ background: '#1e293b', color: '#e2e8f0' }}>🇮🇳 Marathi (मराठी)</option>
-                <option value="ta" style={{ background: '#1e293b', color: '#e2e8f0' }}>🇮🇳 Tamil (தமிழ்)</option>
-                <option value="gu" style={{ background: '#1e293b', color: '#e2e8f0' }}>🇮🇳 Gujarati (ગુજરાતી)</option>
-                <option value="ur" style={{ background: '#1e293b', color: '#e2e8f0' }}>🇮🇳 Urdu (اردو)</option>
-                <option value="kn" style={{ background: '#1e293b', color: '#e2e8f0' }}>🇮🇳 Kannada (ಕನ್ನಡ)</option>
-                <option value="or" style={{ background: '#1e293b', color: '#e2e8f0' }}>🇮🇳 Odia (ଓଡ଼ିଆ)</option>
-                <option value="ml" style={{ background: '#1e293b', color: '#e2e8f0' }}>🇮🇳 Malayalam (മലയാളം)</option>
-                <option value="pa" style={{ background: '#1e293b', color: '#e2e8f0' }}>🇮🇳 Punjabi (ਪੰਜਾਬੀ)</option>
-                <option value="as" style={{ background: '#1e293b', color: '#e2e8f0' }}>🇮🇳 Assamese (অসমীয়া)</option>
-                <option value="en" style={{ background: '#1e293b', color: '#e2e8f0' }}>🇮🇳 English</option>
-              </select>
-              <svg className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
-            {language === "auto" && (
-              <p className="mt-2 text-sm text-gray-400 flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Whisper will automatically detect the Indian language from your audio/video
+          <div className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr] lg:items-center">
+            <div className="space-y-5 text-center lg:text-left">
+              <h1 className="text-4xl font-semibold leading-tight text-transparent md:text-6xl bg-gradient-to-r from-white via-purple-200 to-indigo-200 bg-clip-text">
+                MultiVidAI
+              </h1>
+              <p className="text-base text-slate-200 md:text-xl">
+                Premium studio-grade studio to convert any media into multilingual subtitles,
+                real-time translations, and cinematic AI narration—crafted for next-gen storytellers.
               </p>
-            )}
-          </div>
-
-          {/* Model Size Selector */}
-          <div className="mb-6">
-            <label htmlFor="model-select" className="block text-sm font-medium text-gray-300 mb-3">
-              Model Size (Speed vs Accuracy):
-            </label>
-            <div className="relative">
-              <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              <select
-                id="model-select"
-                value={modelSize}
-                onChange={(e) => setModelSize(e.target.value)}
-                disabled={loading}
-                className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/20 rounded-xl text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
-              >
-                <option value="tiny" style={{ background: '#1e293b', color: '#e2e8f0' }}>⚡ Tiny - Fastest (Lowest Accuracy)</option>
-                <option value="base" style={{ background: '#1e293b', color: '#e2e8f0' }}>🚀 Base - Fast (Good Accuracy) ⭐ Recommended</option>
-                <option value="small" style={{ background: '#1e293b', color: '#e2e8f0' }}>⚖️ Small - Balanced</option>
-                <option value="medium" style={{ background: '#1e293b', color: '#e2e8f0' }}>🎯 Medium - Slower (High Accuracy)</option>
-                <option value="large" style={{ background: '#1e293b', color: '#e2e8f0' }}>🏆 Large - Slowest (Best Accuracy)</option>
-              </select>
-              <svg className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
+              <div className="inline-flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-5 py-2 text-xs uppercase tracking-[0.35em] text-slate-200">
+                <span>Fast lane</span>
+                <span className="text-white/40">•</span>
+                <span>22 languages</span>
+                <span className="text-white/40">•</span>
+                <span>Studio ready output</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 rounded-2xl border border-white/10 bg-white/5 text-center text-sm text-slate-200">
+              <div className="border-r border-white/5 py-5">
+                <p className="text-2xl font-semibold text-white">22+</p>
+                <p className="text-[0.65rem] uppercase tracking-wide text-slate-400">
+                  Languages
+                </p>
+              </div>
+              <div className="border-r border-white/5 py-5">
+                <p className="text-2xl font-semibold text-white">∞</p>
+                <p className="text-[0.65rem] uppercase tracking-wide text-slate-400">
+                  Duration
+                </p>
+              </div>
+              <div className="py-5">
+                <p className="text-2xl font-semibold text-white">3 steps</p>
+                <p className="text-[0.65rem] uppercase tracking-wide text-slate-400">
+                  Workflow
+                </p>
+              </div>
             </div>
           </div>
+        </header>
 
-          {/* Upload Button */}
-          <div className="flex justify-center mb-8">
-            <button
-              onClick={handleUpload}
-              disabled={loading || !file}
-              className="group relative px-8 py-4 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl font-semibold text-white transition-all duration-300 transform hover:scale-105 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none overflow-hidden"
-            >
-              <span className="relative z-10 flex items-center gap-2">
-                {loading ? (
-                  <>
-                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Processing Audio...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    Upload & Transcribe
-                  </>
-                )}
-              </span>
-              <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-blue-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-      </button>
-          </div>
-
-          {/* Transcription Result */}
-      {text && (
-            <div className="mt-8">
-              <div className="bg-gradient-to-br from-green-500/10 to-emerald-500/10 rounded-2xl p-6 border border-green-500/20">
-                <div className="mb-4">
-                  <div className="flex items-center gap-3 mb-2">
-                      <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <h3 className="text-2xl font-bold text-green-400">Transcribed Text</h3>
+        <div className="grid gap-8 lg:grid-cols-[2fr_1fr]">
+          <section className={`${glassCard} p-8`}>
+            <div className="grid gap-6">
+              <div className="grid gap-5 md:grid-cols-[1.1fr_0.9fr]">
+                <label
+                  htmlFor="file-upload"
+                  className="relative flex h-full flex-col justify-between rounded-2xl border border-dashed border-white/20 bg-gradient-to-br from-white/10 to-transparent p-6 text-sm text-slate-200 transition hover:border-blue-400 hover:bg-white/10"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-white/80">Media File</p>
+                    <p className="text-xs text-slate-400">Audio / Video · max 2GB</p>
                   </div>
-                  {detectedLanguage && (
-                    <div className="flex items-center gap-2 text-sm text-gray-300">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
-                      </svg>
-                      <span>
-                        {language === "auto" ? "Detected Language: " : "Transcribed in: "}
-                        <span className="font-semibold text-green-400 uppercase">{detectedLanguage}</span>
+                  <div className="flex flex-col items-center justify-center gap-2 py-8 text-center text-base font-medium text-white">
+                    <span>{file ? file.name : "Drop or browse your file"}</span>
+                    <span className="text-xs text-slate-400">
+                      Supported: mp3 · wav · mp4 · mov · mkv
+                    </span>
+                  </div>
+                  <input
+                    id="file-upload"
+                    type="file"
+                    accept="audio/*,video/*"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                  <span className="text-xs text-blue-300">Click to browse</span>
+                </label>
+
+                <div className="grid gap-4 rounded-2xl border border-white/10 bg-white/5 p-5 text-sm text-slate-200">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div>
+                      <label className="text-xs uppercase tracking-wide text-slate-400">
+                        Input language
+                      </label>
+                      <select
+                        className="mt-1 w-full rounded-2xl border border-white/10 bg-[#060b1e] px-3 py-2 text-sm text-gray-100 focus:border-blue-400 focus:outline-none"
+                        value={language}
+                        disabled={loading}
+                        onChange={(e) => setLanguage(e.target.value)}
+                      >
+                        <option value="auto">Auto detect</option>
+                        <option value="hi">Hindi</option>
+                        <option value="bn">Bengali</option>
+                        <option value="te">Telugu</option>
+                        <option value="mr">Marathi</option>
+                        <option value="ta">Tamil</option>
+                        <option value="gu">Gujarati</option>
+                        <option value="ur">Urdu</option>
+                        <option value="kn">Kannada</option>
+                        <option value="or">Odia</option>
+                        <option value="ml">Malayalam</option>
+                        <option value="pa">Punjabi</option>
+                        <option value="as">Assamese</option>
+                        <option value="en">English</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs uppercase tracking-wide text-slate-400">
+                        Model size
+                      </label>
+                      <select
+                        className="mt-1 w-full rounded-2xl border border-white/10 bg-[#060b1e] px-3 py-2 text-sm text-gray-100 focus:border-blue-400 focus:outline-none"
+                        value={modelSize}
+                        disabled={loading}
+                        onChange={(e) => setModelSize(e.target.value)}
+                      >
+                        <option value="tiny">Tiny · Fastest</option>
+                        <option value="base">Base · Recommended</option>
+                        <option value="small">Small</option>
+                        <option value="medium">Medium</option>
+                        <option value="large">Large · Highest accuracy</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 md:flex-row">
+                    <button
+                      onClick={resetPipeline}
+                      className="w-full rounded-2xl border border-white/20 px-4 py-3 text-xs font-semibold uppercase tracking-[0.3em] text-slate-300 transition hover:border-white/50 hover:text-white md:w-auto"
+                      type="button"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      onClick={handleUpload}
+                      disabled={loading || !file}
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-900/40 transition hover:shadow-blue-600/60 disabled:cursor-not-allowed disabled:opacity-50 md:flex-1"
+                    >
+                      {loading ? (
+                        <>
+                          <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
+                          Transcribing…
+                        </>
+                      ) : (
+                        "Upload & Transcribe"
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {errorMessage && (
+                <p className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                  {errorMessage}
+                </p>
+              )}
+
+              <div className="grid gap-6 lg:grid-cols-3">
+                {hasTranscription && (
+                  <div className="rounded-3xl border border-emerald-400/30 bg-emerald-500/5 p-5 shadow-inner lg:col-span-3">
+                    <div className="flex flex-wrap items-center gap-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-emerald-300">
+                          Transcription
+                        </p>
+                        {detectedLanguage && (
+                          <p className="text-sm text-emerald-100">
+                            Detected language:{" "}
+                            <span className="font-semibold uppercase">
+                              {detectedLanguage}
+                            </span>
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        className="ml-auto rounded-full border border-white/20 px-4 py-1 text-xs uppercase tracking-wide text-gray-200 transition hover:border-white/60 hover:text-white"
+                        onClick={() => navigator.clipboard.writeText(text)}
+                        type="button"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <p className="mt-4 whitespace-pre-line text-sm leading-relaxed text-slate-100">
+                      {text}
+                    </p>
+                  </div>
+                )}
+
+                {hasTranscription && (
+                  <div
+                    className={`space-y-4 rounded-3xl border border-pink-500/30 bg-pink-500/5 p-5 shadow-inner ${
+                      hasTranslation ? "lg:col-span-2" : "lg:col-span-3"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-pink-300">
+                          Translate
+                        </p>
+                        <p className="text-sm text-gray-200">Target language</p>
+                      </div>
+                      <select
+                        className="rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-gray-100"
+                        value={targetLang}
+                        onChange={(e) => setTargetLang(e.target.value)}
+                      >
+                        <option value="hi">Hindi</option>
+                        <option value="bn">Bengali</option>
+                        <option value="mr">Marathi</option>
+                        <option value="ta">Tamil</option>
+                        <option value="te">Telugu</option>
+                        <option value="gu">Gujarati</option>
+                        <option value="kn">Kannada</option>
+                        <option value="ml">Malayalam</option>
+                        <option value="pa">Punjabi</option>
+                        <option value="ur">Urdu</option>
+                        <option value="en">English</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleTranslate}
+                        className="ml-auto rounded-2xl bg-gradient-to-r from-pink-500 to-purple-500 px-4 py-2 text-sm font-semibold text-white transition hover:shadow"
+                      >
+                        Translate text
+                      </button>
+                    </div>
+                    {hasTranslation ? (
+                      <p className="whitespace-pre-line text-sm leading-relaxed text-slate-100">
+                        {translateMessage}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-300">
+                        Choose a target language and convert instantly into culturally accurate text.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {hasTranslation && (
+                  <div className="rounded-3xl border border-indigo-400/30 bg-indigo-500/5 p-5 shadow-inner lg:col-span-1">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-indigo-300">
+                          Voice persona
+                        </p>
+                        <p className="text-sm text-gray-200">Choose tone</p>
+                      </div>
+                      <span className="rounded-full border border-white/15 px-3 py-1 text-[0.6rem] uppercase tracking-[0.3em] text-white/70">
+                        Function
                       </span>
                     </div>
-                  )}
-                </div>
-                <div className="bg-black/20 rounded-xl p-6 backdrop-blur-sm">
-                  <p className="text-gray-200 leading-relaxed whitespace-pre-line">{text}</p>
-                </div>
-              </div>
-              {/* Week 6 Placeholder: Translate Text Button */}
-              <div className="mt-4 flex flex-col items-start gap-3">
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={handleTranslate}
-                    className="px-4 py-2 rounded-lg bg-gradient-to-r from-pink-600 to-purple-600 text-white font-semibold hover:shadow-lg transition"
-                  >
-                    Translate Text
-                  </button>
-                  <select
-                    value={targetLang}
-                    onChange={(e) => setTargetLang(e.target.value)}
-                    className="px-4 py-2 bg-white/5 border border-white/20 rounded-xl text-gray-200 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all"
-                  >
-                    <option value="hi" style={{ background: '#1e293b' }}>to Hindi (हिंदी)</option>
-                    <option value="bn" style={{ background: '#1e293b' }}>to Bengali (বাংলা)</option>
-                    <option value="te" style={{ background: '#1e293b' }}>to Telugu (తెలుగు)</option>
-                    <option value="mr" style={{ background: '#1e293b' }}>to Marathi (मराठी)</option>
-                    <option value="ta" style={{ background: '#1e293b' }}>to Tamil (தமிழ்)</option>
-                    <option value="gu" style={{ background: '#1e293b' }}>to Gujarati (ગુજરાતી)</option>
-                    <option value="ur" style={{ background: '#1e293b' }}>to Urdu (اردو)</option>
-                    <option value="kn" style={{ background: '#1e293b' }}>to Kannada (ಕನ್ನಡ)</option>
-                    <option value="or" style={{ background: '#1e293b' }}>to Odia (ଓଡ଼ିଆ)</option>
-                    <option value="ml" style={{ background: '#1e293b' }}>to Malayalam (മലയാളം)</option>
-                    <option value="pa" style={{ background: '#1e293b' }}>to Punjabi (ਪੰਜਾਬੀ)</option>
-                    <option value="as" style={{ background: '#1e293b' }}>to Assamese (অসমীয়া)</option>
-                    <option value="en" style={{ background: '#1e293b' }}>to English</option>
-                  </select>
-                </div>
-                {translateMessage && (
-                  <div className="text-sm text-gray-300 bg-black/20 p-3 rounded-lg w-full">
-                    <p className="font-semibold text-purple-300 mb-1">Translation:</p>
-                    {translateMessage}
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      {["female", "male"].map((profile) => {
+                        const active = voiceProfile === profile;
+                        return (
+                          <button
+                            key={profile}
+                            type="button"
+                            onClick={() => setVoiceProfile(profile)}
+                            className={`rounded-2xl border px-4 py-3 text-sm font-semibold capitalize transition ${
+                              active
+                                ? "border-white/60 bg-white/10 text-white shadow-lg"
+                                : "border-white/10 bg-black/30 text-slate-200 hover:border-white/30"
+                            }`}
+                          >
+                            {profile}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-4 text-xs text-slate-300">
+                      Tune the narration energy before generating the final AI voiceover.
+                    </p>
+                  </div>
+                )}
+
+                {hasTranslation && (
+                  <div className="rounded-3xl border border-yellow-400/30 bg-yellow-400/5 p-5 shadow-inner lg:col-span-1">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-yellow-400">
+                          Voiceover
+                        </p>
+                        <p className="text-sm text-gray-200">Narration language</p>
+                      </div>
+                      <select
+                        className="rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-gray-100"
+                        value={ttsLang}
+                        onChange={(e) => setTtsLang(e.target.value)}
+                      >
+                        <option value="hi">Hindi</option>
+                        <option value="bn">Bengali</option>
+                        <option value="mr">Marathi</option>
+                        <option value="ta">Tamil</option>
+                        <option value="te">Telugu</option>
+                        <option value="gu">Gujarati</option>
+                        <option value="kn">Kannada</option>
+                        <option value="ml">Malayalam</option>
+                        <option value="pa">Punjabi</option>
+                        <option value="ur">Urdu</option>
+                        <option value="en">English</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleTTS}
+                        className="ml-auto rounded-2xl bg-gradient-to-r from-yellow-400 to-orange-500 px-4 py-2 text-sm font-semibold text-black transition hover:shadow"
+                      >
+                        Generate voiceover
+                      </button>
+                    </div>
+                    {audioUrl ? (
+                      <audio className="mt-4 w-full" controls>
+                        <source src={audioUrl} type="audio/mp3" />
+                      </audio>
+                    ) : (
+                      <p className="mt-4 text-xs text-slate-400">
+                        Create natural voice narration in seconds after translating.
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
             </div>
-          )}
-        </div>
+          </section>
 
-        {/* Footer */}
-        <div className="text-center mt-8 text-gray-400 text-sm">
-          <p>Powered by React & OpenAI Whisper</p>
+          <aside className="flex flex-col gap-6">
+            <div className={`${glassCard} p-6`}>
+              <p className="text-sm uppercase tracking-[0.3em] text-gray-400">
+                Pipeline tracker
+              </p>
+              <p className="mt-2 text-lg font-semibold text-white">
+                {statusMessage}
+              </p>
+              <div className="mt-6">{renderStepIndicator()}</div>
+            </div>
+
+            <div className={`${glassCard} space-y-4 p-6 text-sm text-gray-200`}>
+              <div className="flex items-center justify-between">
+                <p className="text-base font-semibold text-white">Pro tips</p>
+                <span className="rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-[0.3em] text-purple-200">
+                  Live
+                </span>
+              </div>
+              <ul className="space-y-3 text-sm text-gray-300">
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  Use auto-detect when unsure of the spoken language for better accuracy.
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-blue-400" />
+                  Base model balances precision and speed for most clips.
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-pink-400" />
+                  Keep the tab active for long media to prevent browser throttling.
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-yellow-300" />
+                  Download your AI voiceover to reuse across social channels.
+                </li>
+              </ul>
+            </div>
+          </aside>
         </div>
       </div>
     </div>
