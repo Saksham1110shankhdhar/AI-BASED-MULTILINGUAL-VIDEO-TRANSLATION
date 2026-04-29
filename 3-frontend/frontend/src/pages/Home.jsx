@@ -92,8 +92,6 @@ export default function Home() {
   const card = dark
     ? "bg-white/[0.03] border-white/8 hover:border-white/15 hover:bg-white/[0.06]"
     : "bg-white border-slate-200 hover:border-violet-300 hover:shadow-xl hover:shadow-violet-100/60 shadow-sm";
-  const divBg = dark ? "bg-white/5" : "bg-slate-200";
-
   return (
     <div className={`relative min-h-screen ${pg} ${tx1} transition-colors duration-300 overflow-hidden`}>
 

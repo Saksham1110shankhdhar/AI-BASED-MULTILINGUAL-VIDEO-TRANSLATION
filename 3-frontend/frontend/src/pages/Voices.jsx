@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
+import { pythonApiUrl } from "../config/api";
 
 
 
@@ -113,7 +114,7 @@ const handlePlay = async (id, text, lang, voice) => {
   setPlayingId(null);
 
   try {
-    const res = await fetch("http://localhost:8000/tts", {
+    const res = await fetch(pythonApiUrl("/tts"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, lang, voice }),
@@ -122,7 +123,7 @@ const handlePlay = async (id, text, lang, voice) => {
     const data = await res.json();
 
     if (data.audio_url) {
-      const audio = new Audio("http://localhost:8000" + data.audio_url);
+      const audio = new Audio(pythonApiUrl(data.audio_url));
       audio.play();
       setPlayingId(id);
       audio.onended = () => setPlayingId(null);

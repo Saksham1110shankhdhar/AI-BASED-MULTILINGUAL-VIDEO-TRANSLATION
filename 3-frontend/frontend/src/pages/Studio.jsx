@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import axios from "axios";
 import { Link, useLocation } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
+import { pythonApiUrl } from "../config/api";
 
 const sidebarItems = [
   { icon: "🏠", label: "Home",   to: "/" },
@@ -144,7 +145,7 @@ export default function Studio() {
     formData.append("file", file); formData.append("language", language); formData.append("model", modelSize);
     setLoading(true); setErrorMessage(""); setStatusMessage("Uploading and transcribing…");
     try {
-      const res = await axios.post("http://localhost:8000/transcribe", formData, { headers: { "Content-Type": "multipart/form-data" }, timeout: 900000 });
+      const res = await axios.post(pythonApiUrl("/transcribe"), formData, { headers: { "Content-Type": "multipart/form-data" }, timeout: 900000 });
       setText(res.data.transcription || "No transcription found");
       setDetectedLanguage(res.data.detected_language || language);
       setStatusMessage("Transcription completed");
@@ -159,7 +160,7 @@ export default function Studio() {
     setTranslateMessage(""); setErrorMessage(""); setStatusMessage("Translating text…");
     try {
       const sourceLang = detectedLanguage ? detectedLanguage.toLowerCase() : "en";
-      const res = await axios.post("http://localhost:8000/translate", { text, source_lang: sourceLang, target_lang: targetLang });
+      const res = await axios.post(pythonApiUrl("/translate"), { text, source_lang: sourceLang, target_lang: targetLang });
       if (res.data.translated_text) { setTranslateMessage(res.data.translated_text); setStatusMessage("Translation ready"); }
       else { setTranslateMessage("Translation failed!"); setStatusMessage("Translation failed"); }
     } catch (err) { setTranslateMessage("Error: " + err.message); setErrorMessage(err.message); setStatusMessage("Translation failed"); }
@@ -169,8 +170,8 @@ export default function Studio() {
     if (!translateMessage) return;
     setStatusMessage("Generating synthetic voice…"); setErrorMessage("");
     try {
-      const res = await axios.post("http://localhost:8000/tts", { text: translateMessage, lang: ttsLang, voice: voiceProfile });
-      if (res.data.audio_url) { setAudioUrl("http://localhost:8000" + res.data.audio_url); setStatusMessage("Voiceover created"); }
+      const res = await axios.post(pythonApiUrl("/tts"), { text: translateMessage, lang: ttsLang, voice: voiceProfile });
+      if (res.data.audio_url) { setAudioUrl(pythonApiUrl(res.data.audio_url)); setStatusMessage("Voiceover created"); }
       else setStatusMessage("TTS failed");
     } catch (err) { setStatusMessage("TTS failed"); setErrorMessage(err.message); }
   };
@@ -191,13 +192,13 @@ export default function Studio() {
     setDubLoading(true); setErrorMessage(""); setDubProgress("Starting dubbing pipeline..."); setDubVideoUrl(null);
     try {
       setDubProgress("Step 1/4: Transcribing video...");
-      const res = await axios.post("http://localhost:8000/dub/dub", formData, {
+      const res = await axios.post(pythonApiUrl("/dub/dub"), formData, {
         headers: { "Content-Type": "multipart/form-data" },
         timeout: 1800000,
         onUploadProgress: (p) => setDubProgress(`Uploading: ${Math.round((p.loaded * 100) / p.total)}%`),
       });
       if (res.data.success && res.data.video_url) {
-        setDubVideoUrl("http://localhost:8000" + res.data.video_url);
+        setDubVideoUrl(pythonApiUrl(res.data.video_url));
         setDubProgress("Dubbing completed successfully!");
         setStatusMessage("Professional dubbed video ready!");
       } else throw new Error("Dubbing failed - no video URL returned");

@@ -4,6 +4,7 @@ sys.stdout.reconfigure(line_buffering=True)
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import logging
+import os
 from datetime import datetime
 
 from routes.transcribe_routes import transcribe_bp
@@ -12,7 +13,12 @@ from routes.tts_routes import tts_bp
 from routes.dub_routes import dub_bp
 
 app = Flask(__name__)
-CORS(app)
+CLIENT_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CLIENT_ORIGIN", "http://localhost:3000").split(",")
+    if origin.strip()
+]
+CORS(app, origins=CLIENT_ORIGINS)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,11 +53,15 @@ app.register_blueprint(dub_bp, url_prefix="/dub")
 def health():
     return jsonify({"status": "OK"})
 
+@app.route("/health")
+def health_check():
+    return jsonify({"status": "OK"})
+
 print("REGISTERED ROUTES:")
 print(app.url_map)
 
 
 if __name__ == "__main__":
-    app.run(port=8000, debug=False, threaded=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8000)), debug=False, threaded=True)
 
 

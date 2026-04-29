@@ -12,6 +12,9 @@ node_modules/
 ffmpeg-8.0-essentials_build/
 
 # Generated media and local environments
+.env
+.env.*
+!.env.example
 temp/
 wav2lip_env/
 build/

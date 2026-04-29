@@ -8,6 +8,7 @@ const path = require('path');
 
 const router = express.Router();
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
+const PYTHON_SERVICE_URL = (process.env.PYTHON_SERVICE_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '');
 
 // Ensure uploads folder exists
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -40,7 +41,7 @@ router.post('/transcribe', upload.single('file'), async (req, res) => {
     form.append('language', language);
     form.append('model', model);
 
-    const flaskUrl = 'http://127.0.0.1:8000/transcribe';
+    const flaskUrl = `${PYTHON_SERVICE_URL}/transcribe`;
     console.log(`➡️ [Node] Sending to Flask: ${flaskUrl} (language=${language}, model=${model})`);
 
     const axiosConfig = {
@@ -88,7 +89,7 @@ router.post('/transcribe', upload.single('file'), async (req, res) => {
 router.post('/translate', async (req, res) => {
   try {
     const { text, target_lang, source_lang } = req.body;
-    const flaskUrl = 'http://127.0.0.1:8000/translate';
+    const flaskUrl = `${PYTHON_SERVICE_URL}/translate`;
     const response = await axios.post(flaskUrl, { text, target_lang, source_lang }, { timeout: 60000 });
     res.json(response.data);
   } catch (error) {

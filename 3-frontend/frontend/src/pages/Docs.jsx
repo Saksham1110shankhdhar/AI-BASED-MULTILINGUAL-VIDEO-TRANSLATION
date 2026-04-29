@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useTheme } from "../context/ThemeContext";
-import { Link } from "react-router-dom";
+import { PYTHON_API_BASE_URL } from "../config/api";
 
 const sections = [
   {
@@ -13,7 +13,7 @@ const sections = [
       subtitle: "MultiVidAI REST API — 4 independent microservice endpoints",
       body: "MultiVidAI exposes four independent REST API endpoints running on port 8000. Each can be called individually or chained together as a full dubbing pipeline. All endpoints accept multipart/form-data or JSON and return structured JSON responses.",
       extras: [
-        { icon: "🌐", label: "Base URL",    value: "http://localhost:8000",    color: "violet" },
+        { icon: "🌐", label: "Base URL",    value: PYTHON_API_BASE_URL,        color: "violet" },
         { icon: "🔒", label: "Auth",        value: "None required",             color: "emerald" },
         { icon: "📦", label: "Format",      value: "JSON + multipart/form-data",color: "blue" },
         { icon: "⚡", label: "Timeout",     value: "900s transcribe · 1800s dub",color: "amber" },
@@ -147,10 +147,6 @@ const sections = [
   },
 ];
 
-const methodColor = {
-  POST: "bg-emerald-500 text-white",
-};
-
 const accentDark = {
   violet:  { bg: "bg-violet-500/10",  border: "border-violet-500/25",  text: "text-violet-300",  badge: "bg-violet-500/20 text-violet-200",  active: "bg-violet-500/20 border-violet-500/40 text-violet-200" },
   blue:    { bg: "bg-blue-500/10",    border: "border-blue-500/25",    text: "text-blue-300",    badge: "bg-blue-500/20 text-blue-200",      active: "bg-blue-500/20 border-blue-500/40 text-blue-200" },
@@ -236,7 +232,7 @@ export default function Docs() {
               </div>
               <div className="space-y-2">
                 {[
-                  { label: "Base URL", value: ":8000", color: "text-violet-500" },
+                  { label: "Base URL", value: PYTHON_API_BASE_URL, color: "text-violet-500" },
                   { label: "Version",  value: "v2.0",  color: "text-blue-500"   },
                   { label: "Status",   value: "Live",  color: "text-emerald-500" },
                 ].map(({ label, value, color }) => (
@@ -448,7 +444,7 @@ export default function Docs() {
                     {cur.id === "transcribe" && (
                       <>
                         <span className="text-slate-400">curl -X POST \</span><br/>
-                        <span className="text-slate-400">  http://localhost:8000/transcribe \</span><br/>
+                        <span className="text-slate-400">  {PYTHON_API_BASE_URL}/transcribe \</span><br/>
                         <span className="text-slate-400">  -F </span><span className="text-emerald-400">"file=@video.mp4"</span><span className="text-slate-400"> \</span><br/>
                         <span className="text-slate-400">  -F </span><span className="text-emerald-400">"language=auto"</span><span className="text-slate-400"> \</span><br/>
                         <span className="text-slate-400">  -F </span><span className="text-emerald-400">"model=base"</span>
@@ -457,7 +453,7 @@ export default function Docs() {
                     {cur.id === "translate" && (
                       <>
                         <span className="text-slate-400">curl -X POST \</span><br/>
-                        <span className="text-slate-400">  http://localhost:8000/translate \</span><br/>
+                        <span className="text-slate-400">  {PYTHON_API_BASE_URL}/translate \</span><br/>
                         <span className="text-slate-400">  -H </span><span className="text-blue-400">"Content-Type: application/json"</span><span className="text-slate-400"> \</span><br/>
                         <span className="text-slate-400">  -d </span><span className="text-emerald-400">'{`{"text":"Hello","source_lang":"en","target_lang":"hi"}`}'</span>
                       </>
@@ -465,7 +461,7 @@ export default function Docs() {
                     {cur.id === "tts" && (
                       <>
                         <span className="text-slate-400">curl -X POST \</span><br/>
-                        <span className="text-slate-400">  http://localhost:8000/tts \</span><br/>
+                        <span className="text-slate-400">  {PYTHON_API_BASE_URL}/tts \</span><br/>
                         <span className="text-slate-400">  -H </span><span className="text-blue-400">"Content-Type: application/json"</span><span className="text-slate-400"> \</span><br/>
                         <span className="text-slate-400">  -d </span><span className="text-emerald-400">'{`{"text":"नमस्ते","lang":"hi","voice":"female"}`}'</span>
                       </>
@@ -473,7 +469,7 @@ export default function Docs() {
                     {cur.id === "dub" && (
                       <>
                         <span className="text-slate-400">curl -X POST \</span><br/>
-                        <span className="text-slate-400">  http://localhost:8000/dub/dub \</span><br/>
+                        <span className="text-slate-400">  {PYTHON_API_BASE_URL}/dub/dub \</span><br/>
                         <span className="text-slate-400">  -F </span><span className="text-emerald-400">"file=@video.mp4"</span><span className="text-slate-400"> \</span><br/>
                         <span className="text-slate-400">  -F </span><span className="text-emerald-400">"target_lang=hi"</span><span className="text-slate-400"> \</span><br/>
                         <span className="text-slate-400">  -F </span><span className="text-emerald-400">"voice=male"</span><span className="text-slate-400"> \</span><br/>

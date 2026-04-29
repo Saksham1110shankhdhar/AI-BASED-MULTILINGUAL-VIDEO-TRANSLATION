@@ -1,5 +1,8 @@
 flask
 flask-cors
+waitress
+argostranslate
+deep-translator
 openai-whisper
 torch
 torchaudio
@@ -8,8 +11,7 @@ edge-tts
 pydub
 audioop-lts
 Pillow
-opencv-python
-opencv-contrib-python
+opencv-contrib-python-headless
 face-alignment
 librosa
 scipy
