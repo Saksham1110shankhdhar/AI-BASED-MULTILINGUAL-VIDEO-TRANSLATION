@@ -20,7 +20,7 @@ def transcribe_audio_or_video():
         return jsonify({"error": "No file selected"}), 400
 
     # Optional language and model fields
-    language = request.form.get("language", "auto")
+    #  request.form.get("language", "auto")
     model_size = request.form.get("model", "base")
 
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1])
@@ -29,9 +29,18 @@ def transcribe_audio_or_video():
 
     try:
         print(f"Processing file: {file.filename} with model: {model_size}")
-        result = transcribe_file(temp_file.name, language=language, model_size=model_size)
+        result = transcribe_file(
+            temp_file.name,
+            model_size=model_size
+        )
         print(f"Transcription completed successfully")
-        return jsonify(result)
+        return jsonify({
+            "success": True,
+            "transcription": result.get("text", "").strip(),
+            "segments": result.get("segments", []),
+            "language": result.get("detected_language")
+        })
+
     except Exception as e:
         print(f"Error during transcription: {str(e)}")
         return jsonify({"error": f"Transcription failed: {str(e)}"}), 500

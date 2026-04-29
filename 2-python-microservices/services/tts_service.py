@@ -1,64 +1,127 @@
+# services/tts_service.py
+
+import asyncio
+import edge_tts
 import os
 import uuid
-from gtts import gTTS
-from pydub import AudioSegment
 import logging
 
 logger = logging.getLogger("services.tts_service")
 logger.setLevel(logging.INFO)
 
-# Store generated audio
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-TTS_DIR = os.path.join(BASE_DIR, "uploads", "tts")
-os.makedirs(TTS_DIR, exist_ok=True)
+TTS_OUTPUT_DIR = os.path.join(BASE_DIR, "uploads", "tts")
+TTS_DIR = TTS_OUTPUT_DIR
+os.makedirs(TTS_OUTPUT_DIR, exist_ok=True)
 
-# Supported languages for gTTS
-TTS_LANG_CODES = {
-    "en": "en",
-    "hi": "hi",
-    "bn": "bn",
-    "ta": "ta",
-    "te": "te",
-    "mr": "mr",
-    "gu": "gu",
-    "kn": "kn",
-    "ml": "ml",
-    "pa": "pa",
-    "ur": "ur"
+# ── Female voices ──────────────────────────────────────────────
+VOICE_MAP_FEMALE = {
+    "hi":  "hi-IN-SwaraNeural",
+    "bn":  "bn-IN-TanishaaNeural",
+    "ta":  "ta-IN-PallaviNeural",
+    "te":  "te-IN-ShrutiNeural",
+    "gu":  "gu-IN-DhwaniNeural",
+    "mr":  "mr-IN-AarohiNeural",
+    "kn":  "kn-IN-SapnaNeural",
+    "ml":  "ml-IN-SobhanaNeural",
+    "ur":  "ur-PK-UzmaNeural",
+    "en":  "en-US-JennyNeural",
+    "pa":  "ur-PK-UzmaNeural",
+    "or":  "hi-IN-SwaraNeural",
+    "as":  "bn-IN-TanishaaNeural",
+    "ne":  "hi-IN-SwaraNeural",
+    "sd":  "ur-PK-UzmaNeural",
+    "sa":  "hi-IN-SwaraNeural",
+    "ks":  "ur-PK-UzmaNeural",
+    "kok": "mr-IN-AarohiNeural",
+    "mai": "hi-IN-SwaraNeural",
+    "mni": "bn-IN-TanishaaNeural",
+    "doi": "hi-IN-SwaraNeural",
+    "brx": "hi-IN-SwaraNeural",
+    "sat": "hi-IN-SwaraNeural",
+}
+# ── Male voices ────────────────────────────────────────────────
+VOICE_MAP_MALE = {
+    "hi":  "hi-IN-MadhurNeural",
+    "bn":  "bn-IN-BashkarNeural",
+    "ta":  "ta-IN-ValluvarNeural",
+    "te":  "te-IN-MohanNeural",
+    "gu":  "gu-IN-NiranjanNeural",
+    "mr":  "mr-IN-ManoharNeural",
+    "kn":  "kn-IN-GaganNeural",
+    "ml":  "ml-IN-MidhunNeural",
+    "ur":  "ur-PK-AsadNeural",
+    "en":  "en-US-GuyNeural",
+    "pa":  "ur-PK-AsadNeural",
+    "or":  "hi-IN-MadhurNeural",
+    "as":  "bn-IN-BashkarNeural",
+    "ne":  "hi-IN-MadhurNeural",
+    "sd":  "ur-PK-AsadNeural",
+    "sa":  "hi-IN-MadhurNeural",
+    "ks":  "ur-PK-AsadNeural",
+    "kok": "mr-IN-ManoharNeural",
+    "mai": "hi-IN-MadhurNeural",
+    "mni": "bn-IN-BashkarNeural",
+    "doi": "hi-IN-MadhurNeural",
+    "brx": "hi-IN-MadhurNeural",
+    "sat": "hi-IN-MadhurNeural",
 }
 
-VOICE_PROFILES = {
-    "female": 2,  # subtly higher pitch
-    "male": -3,   # slightly deeper voice
-}
+
+def _pick_voice(lang: str, voice_gender: str) -> str:
+    gender = voice_gender.strip().lower() if voice_gender else "female"
+
+    if gender == "male":
+        voice = VOICE_MAP_MALE.get(lang)
+        fallback = "hi-IN-MadhurNeural"
+    else:
+        voice = VOICE_MAP_FEMALE.get(lang)
+        fallback = "hi-IN-SwaraNeural"
+
+    if not voice:
+        logger.warning(f"⚠️ No voice for lang={lang} gender={gender}, using fallback")
+        voice = fallback
+
+    return voice
 
 
-def generate_tts(text: str, lang: str = "hi", voice: str = "female") -> str:
-    if not text.strip():
-        raise ValueError("Text is empty")
+async def _generate_tts_async(text: str, lang: str, voice_gender: str) -> str:
+    if not text or not text.strip():
+        raise ValueError("TTS text is empty")
 
-    if lang not in TTS_LANG_CODES:
-        raise ValueError(f"TTS: Unsupported language '{lang}'")
+    voice = _pick_voice(lang, voice_gender)
+    out_path = os.path.join(TTS_OUTPUT_DIR, f"tts_{uuid.uuid4().hex}.mp3")
 
-    unique_file = f"{lang}_{uuid.uuid4().hex}.mp3"
-    file_path = os.path.join(TTS_DIR, unique_file)
+    logger.info(f"🎤 TTS → lang={lang}, gender={voice_gender}, voice={voice}, chars={len(text)}")
 
-    tts = gTTS(text=text, lang=TTS_LANG_CODES[lang])
-    tts.save(file_path)
+    communicate = edge_tts.Communicate(
+        text=text.strip(),
+        voice=voice,
+        rate="+0%",
+        volume="+0%"
+    )
+    await communicate.save(out_path)
 
-    apply_voice_profile(file_path, voice)
+    if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+        raise RuntimeError("Edge-TTS failed to generate audio")
 
-    logger.info(f"TTS saved: {file_path} with voice={voice}")
-    return unique_file
+    logger.info(f"✅ TTS saved: {os.path.basename(out_path)}")
+    return out_path
 
 
-def apply_voice_profile(file_path: str, voice: str) -> None:
-    semitone_shift = VOICE_PROFILES.get(voice, 0)
-    if semitone_shift == 0:
-        return
-
-    audio = AudioSegment.from_file(file_path)
-    new_sample_rate = int(audio.frame_rate * (2.0 ** (semitone_shift / 12.0)))
-    shifted = audio._spawn(audio.raw_data, overrides={"frame_rate": new_sample_rate})
-    shifted = shifted.set_frame_rate(audio.frame_rate)
-    shifted.export(file_path, format="mp3")
+def generate_tts(text: str, lang: str = "hi", voice: str = "female", target_duration=None) -> str:
+    """
+    Generate TTS audio.
+    voice = "female" | "male"
+    target_duration is accepted but ignored (kept for API compatibility).
+    Returns filename only.
+    """
+    try:
+        output_path = asyncio.run(_generate_tts_async(text, lang, voice))
+        return os.path.basename(output_path)
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        output_path = loop.run_until_complete(_generate_tts_async(text, lang, voice))
+        loop.close()
+        return os.path.basename(output_path)

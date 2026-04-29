@@ -1,31 +1,28 @@
-const express = require('express');
-const cors = require('cors');
-const morgan = require('morgan');
-const bodyParser = require('body-parser');
-const axios = require('axios');
-require('dotenv').config();
+require("dotenv").config();
+const express  = require("express");
+const mongoose = require("mongoose");
+const cors     = require("cors");
 
-const app = express();
+const transcribeRoute = require("./routes/transcribe");
+const authRoute       = require("./routes/auth");
 
-// Middleware layer
+const app  = express();
+const PORT = process.env.PORT || 5000;
+
+// ── Middleware ──
 app.use(cors());
-app.use(morgan('dev'));
-app.use(bodyParser.json({ limit: '10mb' }));
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.json());
 
-// Health check route
-app.get('/', (req, res) => {
-  res.json({ status: 'ok', message: 'MultiVidAI server running' });
-});
+// ── MongoDB ──
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch((err) => console.error("❌ MongoDB error:", err));
 
-// 🔹 Import and use your transcribe route
-const transcribeRoute = require('./routes/transcribe');
-app.use('/api', transcribeRoute); // all /api/transcribe and /api/translate requests go through this
+// ── Routes ──
+app.use("/api/auth",      authRoute);
+app.use("/api",           transcribeRoute);
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`🚀 Server listening on http://localhost:${port}`);
-});
+app.get("/", (req, res) => res.json({ status: "OK", message: "MultiVidAI Backend" }));
 
-
+app.listen(PORT, () => console.log(`🚀 Backend running on port ${PORT}`));
 

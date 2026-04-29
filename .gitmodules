@@ -1,0 +1,3 @@
+[submodule "2-python-microservices/wav2lip"]
+	path = 2-python-microservices/wav2lip
+	url = https://github.com/Rudrabha/Wav2Lip.git

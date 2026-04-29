@@ -1,35 +1,57 @@
-from flask import Flask, jsonify
-from routes.tts_routes import tts_bp
+import sys
+sys.stdout.reconfigure(line_buffering=True)
+
+from flask import Flask, jsonify, request
 from flask_cors import CORS
+import logging
+from datetime import datetime
+
 from routes.transcribe_routes import transcribe_bp
 from routes.translate_routes import translate_bp
+from routes.tts_routes import tts_bp
+from routes.dub_routes import dub_bp
 
 app = Flask(__name__)
-
-# Enable CORS for all routes
 CORS(app)
 
-# Register Blueprint (routes)
+logging.basicConfig(
+    level=logging.INFO,
+     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout)  # 👈 force terminal output
+    ],
+    force=True
+)
+
+@app.before_request
+def log_request():
+    print("\n" + "=" * 80, flush=True)
+    print(f"📥 REQUEST {request.method} {request.path}", flush=True)
+    if request.files:
+        print(f"📎 Files: {list(request.files.keys())}", flush=True)
+    if request.form:
+        print(f"📝 Form: {dict(request.form)}", flush=True)
+    print("=" * 80, flush=True)
+
+@app.after_request
+def log_response(res):
+    print(f"📤 RESPONSE {res.status_code}", flush=True)
+    return res
+
 app.register_blueprint(transcribe_bp)
 app.register_blueprint(translate_bp)
 app.register_blueprint(tts_bp, url_prefix="/tts")
+app.register_blueprint(dub_bp, url_prefix="/dub")
 
+@app.route("/")
+def health():
+    return jsonify({"status": "OK"})
 
-@app.route("/", methods=["GET"])
-def home():
-    return jsonify({"message": "Python microservice is running OK"})
+print("REGISTERED ROUTES:")
+print(app.url_map)
 
-# Debug: List all routes
-@app.route("/routes", methods=["GET"])
-def list_routes():
-    routes = []
-    for rule in app.url_map.iter_rules():
-        routes.append({
-            "endpoint": rule.endpoint,
-            "methods": list(rule.methods),
-            "path": str(rule)
-        })
-    return jsonify({"routes": routes})
 
 if __name__ == "__main__":
-    app.run(port=8000, debug=True)
+    app.run(port=8000, debug=False, threaded=True)
+
+

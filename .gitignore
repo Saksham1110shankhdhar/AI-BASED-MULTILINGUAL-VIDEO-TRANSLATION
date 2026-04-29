@@ -1,0 +1,18 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+.venv/
+
+# Node modules
+node_modules/
+
+# FFmpeg binaries
+ffmpeg-8.0-essentials_build/
+
+# Generated media and local environments
+temp/
+wav2lip_env/
+build/
+/git
